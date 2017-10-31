@@ -30,11 +30,11 @@
 
 namespace Google\Cloud\Spanner\V1\Gapic;
 
+use Google\Cloud\Core\GapicClientTrait;
+use Google\Cloud\Core\Grpc\GrpcTransport;
 use Google\Cloud\Version;
 use Google\GAX\AgentHeaderDescriptor;
-use Google\GAX\ApiCallable;
 use Google\GAX\CallSettings;
-use Google\GAX\GrpcCredentialsHelper;
 use Google\GAX\PathTemplate;
 use Google\GAX\ValidationException;
 use Google\Protobuf\Struct;
@@ -69,7 +69,7 @@ use Google\Spanner\V1\TransactionSelector;
  * ```
  * try {
  *     $spannerClient = new SpannerClient();
- *     $formattedDatabase = $spannerClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+ *     $formattedDatabase = $spannerClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
  *     $response = $spannerClient->createSession($formattedDatabase);
  * } finally {
  *     $spannerClient->close();
@@ -85,6 +85,8 @@ use Google\Spanner\V1\TransactionSelector;
  */
 class SpannerGapicClient
 {
+    use GapicClientTrait;
+
     /**
      * The default address of the service.
      */
@@ -111,15 +113,14 @@ class SpannerGapicClient
     private static $gapicVersion;
     private static $gapicVersionLoaded = false;
 
-    protected $grpcCredentialsHelper;
-    protected $spannerStub;
+    protected $spannerTransport;
     private $scopes;
     private $defaultCallSettings;
     private $descriptors;
 
     private static function getDatabaseNameTemplate()
     {
-        if (self::$databaseNameTemplate == null) {
+        if (null == self::$databaseNameTemplate) {
             self::$databaseNameTemplate = new PathTemplate('projects/{project}/instances/{instance}/databases/{database}');
         }
 
@@ -128,7 +129,7 @@ class SpannerGapicClient
 
     private static function getSessionNameTemplate()
     {
-        if (self::$sessionNameTemplate == null) {
+        if (null == self::$sessionNameTemplate) {
             self::$sessionNameTemplate = new PathTemplate('projects/{project}/instances/{instance}/databases/{database}/sessions/{session}');
         }
 
@@ -137,7 +138,7 @@ class SpannerGapicClient
 
     private static function getPathTemplateMap()
     {
-        if (self::$pathTemplateMap == null) {
+        if (null == self::$pathTemplateMap) {
             self::$pathTemplateMap = [
                 'database' => self::getDatabaseNameTemplate(),
                 'session' => self::getSessionNameTemplate(),
@@ -181,7 +182,7 @@ class SpannerGapicClient
      * @param string $instance
      * @param string $database
      *
-     * @return string The formatted database resource.
+     * @return string the formatted database resource
      * @experimental
      */
     public static function databaseName($project, $instance, $database)
@@ -202,7 +203,7 @@ class SpannerGapicClient
      * @param string $database
      * @param string $session
      *
-     * @return string The formatted session resource.
+     * @return string the formatted session resource
      * @experimental
      */
     public static function sessionName($project, $instance, $database, $session)
@@ -230,9 +231,9 @@ class SpannerGapicClient
      * @param string $formattedName The formatted name string
      * @param string $template      Optional name of template to match
      *
-     * @return array An associative array from name component IDs to component values.
+     * @return array an associative array from name component IDs to component values
      *
-     * @throws ValidationException If $formattedName could not be matched.
+     * @throws ValidationException if $formattedName could not be matched
      * @experimental
      */
     public static function parseName($formattedName, $template = null)
@@ -267,16 +268,18 @@ class SpannerGapicClient
      *                                  Default 'spanner.googleapis.com'.
      *     @type mixed $port The port on which to connect to the remote host. Default 443.
      *     @type \Grpc\Channel $channel
-     *           A `Channel` object to be used by gRPC. If not specified, a channel will be constructed.
+     *           Optional. A `Channel` object to be used by gRPC. If not specified, a channel will be constructed.
      *     @type \Grpc\ChannelCredentials $sslCreds
-     *           A `ChannelCredentials` object for use with an SSL-enabled channel.
+     *           Optional. A `ChannelCredentials` object for use with an SSL-enabled channel.
      *           Default: a credentials object returned from
      *           \Grpc\ChannelCredentials::createSsl()
-     *           NOTE: if the $channel optional argument is specified, then this argument is unused.
+     *           NOTE: if the $channel optional argument is specified, then this option is unused.
      *     @type bool $forceNewChannel
-     *           If true, this forces gRPC to create a new channel instead of using a persistent channel.
+     *           Optional. If true, this forces gRPC to create a new channel instead of using a persistent channel.
      *           Defaults to false.
      *           NOTE: if the $channel optional argument is specified, then this option is unused.
+     *     @type mixed $transport Optional, the string "grpc". Determines the backend transport used
+     *            to make the API call.
      *     @type \Google\Auth\CredentialsLoader $credentialsLoader
      *           A CredentialsLoader object created using the Google\Auth library.
      *     @type array $scopes A string array of scopes to use when acquiring credentials.
@@ -345,25 +348,32 @@ class SpannerGapicClient
         $this->defaultCallSettings =
                 CallSettings::load(
                     'google.spanner.v1.Spanner',
-                    $clientConfig,
-                    $options['retryingOverride']
+                                   $clientConfig,
+                                   $options['retryingOverride']
                 );
 
         $this->scopes = $options['scopes'];
 
-        $createStubOptions = [];
-        if (array_key_exists('sslCreds', $options)) {
-            $createStubOptions['sslCreds'] = $options['sslCreds'];
-        }
-        $this->grpcCredentialsHelper = new GrpcCredentialsHelper($options);
+        if (empty($options['createTransportFunction'])) {
+            $options['createTransportFunction'] = function ($options, $transport = null) {
+                switch ($transport) {
+                    case 'grpc':
+                        if (empty($options['createGrpcStubFunction'])) {
+                            $options['createGrpcStubFunction'] = function ($fullAddress, $stubOpts, $channel) {
+                                return new SpannerGrpcClient($fullAddress, $stubOpts, $channel);
+                            };
+                        }
 
-        $createSpannerStubFunction = function ($hostname, $opts, $channel) {
-            return new SpannerGrpcClient($hostname, $opts, $channel);
-        };
-        if (array_key_exists('createSpannerStubFunction', $options)) {
-            $createSpannerStubFunction = $options['createSpannerStubFunction'];
+                        return new GrpcTransport($options);
+                }
+                throw new InvalidArgumentException('Invalid transport provided: '.$transport);
+            };
         }
-        $this->spannerStub = $this->grpcCredentialsHelper->createStub($createSpannerStubFunction);
+
+        $this->spannerTransport = call_user_func_array(
+            $options['createTransportFunction'],
+            [$options, $this->getTransport($options)]
+        );
     }
 
     /**
@@ -391,7 +401,7 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedDatabase = $spannerClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedDatabase = $spannerClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $response = $spannerClient->createSession($formattedDatabase);
      * } finally {
      *     $spannerClient->close();
@@ -400,7 +410,7 @@ class SpannerGapicClient
      *
      * @param string $database     Required. The database in which the new session is created.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -426,8 +436,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'CreateSession',
             $mergedSettings,
             $this->descriptors['createSession']
@@ -435,8 +445,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -448,7 +458,7 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedName = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
+     *     $formattedName = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
      *     $response = $spannerClient->getSession($formattedName);
      * } finally {
      *     $spannerClient->close();
@@ -457,7 +467,7 @@ class SpannerGapicClient
      *
      * @param string $name         Required. The name of the session to retrieve.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -483,8 +493,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'GetSession',
             $mergedSettings,
             $this->descriptors['getSession']
@@ -492,8 +502,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -503,7 +513,7 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedName = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
+     *     $formattedName = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
      *     $spannerClient->deleteSession($formattedName);
      * } finally {
      *     $spannerClient->close();
@@ -512,7 +522,7 @@ class SpannerGapicClient
      *
      * @param string $name         Required. The name of the session to delete.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -536,8 +546,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'DeleteSession',
             $mergedSettings,
             $this->descriptors['deleteSession']
@@ -545,8 +555,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -566,8 +576,8 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
-     *     $sql = "";
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
+     *     $sql = '';
      *     $response = $spannerClient->executeSql($formattedSession, $sql);
      * } finally {
      *     $spannerClient->close();
@@ -577,7 +587,7 @@ class SpannerGapicClient
      * @param string $session      Required. The session in which the SQL query should be performed.
      * @param string $sql          Required. The SQL query string.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type TransactionSelector $transaction
      *          The transaction to use. If none is provided, the default is a
@@ -657,8 +667,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'ExecuteSql',
             $mergedSettings,
             $this->descriptors['executeSql']
@@ -666,8 +676,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -681,8 +691,8 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
-     *     $sql = "";
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
+     *     $sql = '';
      *     // Read all responses until the stream is complete
      *     $stream = $spannerClient->executeStreamingSql($formattedSession, $sql);
      *     foreach ($stream->readAll() as $element) {
@@ -696,7 +706,7 @@ class SpannerGapicClient
      * @param string $session      Required. The session in which the SQL query should be performed.
      * @param string $sql          Required. The SQL query string.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type TransactionSelector $transaction
      *          The transaction to use. If none is provided, the default is a
@@ -780,8 +790,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'ExecuteStreamingSql',
             $mergedSettings,
             $this->descriptors['executeStreamingSql']
@@ -789,8 +799,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -812,8 +822,8 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
-     *     $table = "";
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
+     *     $table = '';
      *     $columns = [];
      *     $keySet = new KeySet();
      *     $response = $spannerClient->read($formattedSession, $table, $columns, $keySet);
@@ -837,7 +847,7 @@ class SpannerGapicClient
      * It is not an error for the `key_set` to name rows that do not
      * exist in the database. Read yields nothing for nonexistent rows.
      * @param array $optionalArgs {
-     *                            Optional.
+     *                            Optional
      *
      *     @type TransactionSelector $transaction
      *          The transaction to use. If none is provided, the default is a
@@ -895,8 +905,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'Read',
             $mergedSettings,
             $this->descriptors['read']
@@ -904,8 +914,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -919,8 +929,8 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
-     *     $table = "";
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
+     *     $table = '';
      *     $columns = [];
      *     $keySet = new KeySet();
      *     // Read all responses until the stream is complete
@@ -948,7 +958,7 @@ class SpannerGapicClient
      * It is not an error for the `key_set` to name rows that do not
      * exist in the database. Read yields nothing for nonexistent rows.
      * @param array $optionalArgs {
-     *                            Optional.
+     *                            Optional
      *
      *     @type TransactionSelector $transaction
      *          The transaction to use. If none is provided, the default is a
@@ -1010,8 +1020,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'StreamingRead',
             $mergedSettings,
             $this->descriptors['streamingRead']
@@ -1019,8 +1029,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1033,7 +1043,7 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
      *     $options = new TransactionOptions();
      *     $response = $spannerClient->beginTransaction($formattedSession, $options);
      * } finally {
@@ -1044,7 +1054,7 @@ class SpannerGapicClient
      * @param string             $session      Required. The session in which the transaction runs.
      * @param TransactionOptions $options      Required. Options for the new transaction.
      * @param array              $optionalArgs {
-     *                                         Optional.
+     *                                         Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -1071,8 +1081,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'BeginTransaction',
             $mergedSettings,
             $this->descriptors['beginTransaction']
@@ -1080,8 +1090,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1098,7 +1108,7 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
      *     $mutations = [];
      *     $response = $spannerClient->commit($formattedSession, $mutations);
      * } finally {
@@ -1111,7 +1121,7 @@ class SpannerGapicClient
      *                                 mutations are applied atomically, in the order they appear in
      *                                 this list.
      * @param array      $optionalArgs {
-     *                                 Optional.
+     *                                 Optional
      *
      *     @type string $transactionId
      *          Commit a previously-started transaction.
@@ -1156,8 +1166,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'Commit',
             $mergedSettings,
             $this->descriptors['commit']
@@ -1165,8 +1175,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1183,8 +1193,8 @@ class SpannerGapicClient
      * ```
      * try {
      *     $spannerClient = new SpannerClient();
-     *     $formattedSession = $spannerClient->sessionName("[PROJECT]", "[INSTANCE]", "[DATABASE]", "[SESSION]");
-     *     $transactionId = "";
+     *     $formattedSession = $spannerClient->sessionName('[PROJECT]', '[INSTANCE]', '[DATABASE]', '[SESSION]');
+     *     $transactionId = '';
      *     $spannerClient->rollback($formattedSession, $transactionId);
      * } finally {
      *     $spannerClient->close();
@@ -1194,7 +1204,7 @@ class SpannerGapicClient
      * @param string $session       Required. The session in which the transaction to roll back is running.
      * @param string $transactionId Required. The transaction to roll back.
      * @param array  $optionalArgs  {
-     *                              Optional.
+     *                              Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -1219,8 +1229,8 @@ class SpannerGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->spannerStub,
+
+        $callable = $this->spannerTransport->createApiCall(
             'Rollback',
             $mergedSettings,
             $this->descriptors['rollback']
@@ -1228,8 +1238,8 @@ class SpannerGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1240,11 +1250,6 @@ class SpannerGapicClient
      */
     public function close()
     {
-        $this->spannerStub->close();
-    }
-
-    private function createCredentialsCallback()
-    {
-        return $this->grpcCredentialsHelper->createCallCredentialsCallback();
+        $this->spannerTransport->close();
     }
 }

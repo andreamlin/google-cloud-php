@@ -30,13 +30,13 @@
 
 namespace Google\Cloud\Spanner\Admin\Database\V1\Gapic;
 
+use Google\Cloud\Core\GapicClientTrait;
+use Google\Cloud\Core\Grpc\GrpcTransport;
+use Google\Cloud\Core\LongRunning\OperationsClient;
+use Google\Cloud\Core\OperationResponse;
 use Google\Cloud\Version;
 use Google\GAX\AgentHeaderDescriptor;
-use Google\GAX\ApiCallable;
 use Google\GAX\CallSettings;
-use Google\GAX\GrpcCredentialsHelper;
-use Google\GAX\LongRunning\OperationsClient;
-use Google\GAX\OperationResponse;
 use Google\GAX\PageStreamingDescriptor;
 use Google\GAX\PathTemplate;
 use Google\GAX\ValidationException;
@@ -72,7 +72,7 @@ use Google\Spanner\Admin\Database\V1\UpdateDatabaseDdlRequest;
  * ```
  * try {
  *     $databaseAdminClient = new DatabaseAdminClient();
- *     $formattedParent = $databaseAdminClient->instanceName("[PROJECT]", "[INSTANCE]");
+ *     $formattedParent = $databaseAdminClient->instanceName('[PROJECT]', '[INSTANCE]');
  *     // Iterate through all elements
  *     $pagedResponse = $databaseAdminClient->listDatabases($formattedParent);
  *     foreach ($pagedResponse->iterateAllElements() as $element) {
@@ -100,6 +100,8 @@ use Google\Spanner\Admin\Database\V1\UpdateDatabaseDdlRequest;
  */
 class DatabaseAdminGapicClient
 {
+    use GapicClientTrait;
+
     /**
      * The default address of the service.
      */
@@ -126,8 +128,7 @@ class DatabaseAdminGapicClient
     private static $gapicVersion;
     private static $gapicVersionLoaded = false;
 
-    protected $grpcCredentialsHelper;
-    protected $databaseAdminStub;
+    protected $databaseAdminTransport;
     private $scopes;
     private $defaultCallSettings;
     private $descriptors;
@@ -135,7 +136,7 @@ class DatabaseAdminGapicClient
 
     private static function getInstanceNameTemplate()
     {
-        if (self::$instanceNameTemplate == null) {
+        if (null == self::$instanceNameTemplate) {
             self::$instanceNameTemplate = new PathTemplate('projects/{project}/instances/{instance}');
         }
 
@@ -144,7 +145,7 @@ class DatabaseAdminGapicClient
 
     private static function getDatabaseNameTemplate()
     {
-        if (self::$databaseNameTemplate == null) {
+        if (null == self::$databaseNameTemplate) {
             self::$databaseNameTemplate = new PathTemplate('projects/{project}/instances/{instance}/databases/{database}');
         }
 
@@ -153,7 +154,7 @@ class DatabaseAdminGapicClient
 
     private static function getPathTemplateMap()
     {
-        if (self::$pathTemplateMap == null) {
+        if (null == self::$pathTemplateMap) {
             self::$pathTemplateMap = [
                 'instance' => self::getInstanceNameTemplate(),
                 'database' => self::getDatabaseNameTemplate(),
@@ -162,6 +163,7 @@ class DatabaseAdminGapicClient
 
         return self::$pathTemplateMap;
     }
+
     private static function getPageStreamingDescriptors()
     {
         $listDatabasesPageStreamingDescriptor =
@@ -216,7 +218,7 @@ class DatabaseAdminGapicClient
      * @param string $project
      * @param string $instance
      *
-     * @return string The formatted instance resource.
+     * @return string the formatted instance resource
      * @experimental
      */
     public static function instanceName($project, $instance)
@@ -235,7 +237,7 @@ class DatabaseAdminGapicClient
      * @param string $instance
      * @param string $database
      *
-     * @return string The formatted database resource.
+     * @return string the formatted database resource
      * @experimental
      */
     public static function databaseName($project, $instance, $database)
@@ -262,9 +264,9 @@ class DatabaseAdminGapicClient
      * @param string $formattedName The formatted name string
      * @param string $template      Optional name of template to match
      *
-     * @return array An associative array from name component IDs to component values.
+     * @return array an associative array from name component IDs to component values
      *
-     * @throws ValidationException If $formattedName could not be matched.
+     * @throws ValidationException if $formattedName could not be matched
      * @experimental
      */
     public static function parseName($formattedName, $template = null)
@@ -292,7 +294,7 @@ class DatabaseAdminGapicClient
     /**
      * Return an OperationsClient object with the same endpoint as $this.
      *
-     * @return \Google\GAX\LongRunning\OperationsClient
+     * @return \Google\Cloud\Core\LongRunning\OperationsClient
      * @experimental
      */
     public function getOperationsClient()
@@ -337,16 +339,18 @@ class DatabaseAdminGapicClient
      *                                  Default 'spanner.googleapis.com'.
      *     @type mixed $port The port on which to connect to the remote host. Default 443.
      *     @type \Grpc\Channel $channel
-     *           A `Channel` object to be used by gRPC. If not specified, a channel will be constructed.
+     *           Optional. A `Channel` object to be used by gRPC. If not specified, a channel will be constructed.
      *     @type \Grpc\ChannelCredentials $sslCreds
-     *           A `ChannelCredentials` object for use with an SSL-enabled channel.
+     *           Optional. A `ChannelCredentials` object for use with an SSL-enabled channel.
      *           Default: a credentials object returned from
      *           \Grpc\ChannelCredentials::createSsl()
-     *           NOTE: if the $channel optional argument is specified, then this argument is unused.
+     *           NOTE: if the $channel optional argument is specified, then this option is unused.
      *     @type bool $forceNewChannel
-     *           If true, this forces gRPC to create a new channel instead of using a persistent channel.
+     *           Optional. If true, this forces gRPC to create a new channel instead of using a persistent channel.
      *           Defaults to false.
      *           NOTE: if the $channel optional argument is specified, then this option is unused.
+     *     @type mixed $transport Optional, the string "grpc". Determines the backend transport used
+     *            to make the API call.
      *     @type \Google\Auth\CredentialsLoader $credentialsLoader
      *           A CredentialsLoader object created using the Google\Auth library.
      *     @type array $scopes A string array of scopes to use when acquiring credentials.
@@ -427,25 +431,32 @@ class DatabaseAdminGapicClient
         $this->defaultCallSettings =
                 CallSettings::load(
                     'google.spanner.admin.database.v1.DatabaseAdmin',
-                    $clientConfig,
-                    $options['retryingOverride']
+                                   $clientConfig,
+                                   $options['retryingOverride']
                 );
 
         $this->scopes = $options['scopes'];
 
-        $createStubOptions = [];
-        if (array_key_exists('sslCreds', $options)) {
-            $createStubOptions['sslCreds'] = $options['sslCreds'];
-        }
-        $this->grpcCredentialsHelper = new GrpcCredentialsHelper($options);
+        if (empty($options['createTransportFunction'])) {
+            $options['createTransportFunction'] = function ($options, $transport = null) {
+                switch ($transport) {
+                    case 'grpc':
+                        if (empty($options['createGrpcStubFunction'])) {
+                            $options['createGrpcStubFunction'] = function ($fullAddress, $stubOpts, $channel) {
+                                return new DatabaseAdminGrpcClient($fullAddress, $stubOpts, $channel);
+                            };
+                        }
 
-        $createDatabaseAdminStubFunction = function ($hostname, $opts, $channel) {
-            return new DatabaseAdminGrpcClient($hostname, $opts, $channel);
-        };
-        if (array_key_exists('createDatabaseAdminStubFunction', $options)) {
-            $createDatabaseAdminStubFunction = $options['createDatabaseAdminStubFunction'];
+                        return new GrpcTransport($options);
+                }
+                throw new InvalidArgumentException('Invalid transport provided: '.$transport);
+            };
         }
-        $this->databaseAdminStub = $this->grpcCredentialsHelper->createStub($createDatabaseAdminStubFunction);
+
+        $this->databaseAdminTransport = call_user_func_array(
+            $options['createTransportFunction'],
+            [$options, $this->getTransport($options)]
+        );
     }
 
     /**
@@ -455,7 +466,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedParent = $databaseAdminClient->instanceName("[PROJECT]", "[INSTANCE]");
+     *     $formattedParent = $databaseAdminClient->instanceName('[PROJECT]', '[INSTANCE]');
      *     // Iterate through all elements
      *     $pagedResponse = $databaseAdminClient->listDatabases($formattedParent);
      *     foreach ($pagedResponse->iterateAllElements() as $element) {
@@ -477,7 +488,7 @@ class DatabaseAdminGapicClient
      * @param string $parent       Required. The instance whose databases should be listed.
      *                             Values are of the form `projects/<project>/instances/<instance>`.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type int $pageSize
      *          The maximum number of resources contained in the underlying API
@@ -518,8 +529,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'ListDatabases',
             $mergedSettings,
             $this->descriptors['listDatabases']
@@ -527,8 +538,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -545,8 +556,8 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedParent = $databaseAdminClient->instanceName("[PROJECT]", "[INSTANCE]");
-     *     $createStatement = "";
+     *     $formattedParent = $databaseAdminClient->instanceName('[PROJECT]', '[INSTANCE]');
+     *     $createStatement = '';
      *     $operationResponse = $databaseAdminClient->createDatabase($formattedParent, $createStatement);
      *     $operationResponse->pollUntilComplete();
      *     if ($operationResponse->operationSucceeded()) {
@@ -584,7 +595,7 @@ class DatabaseAdminGapicClient
      *                                new database.  The database ID must conform to the regular expression
      *                                `[a-z][a-z0-9_\-]*[a-z0-9]` and be between 2 and 30 characters in length.
      * @param array  $optionalArgs    {
-     *                                Optional.
+     *                                Optional
      *
      *     @type string[] $extraStatements
      *          An optional list of DDL statements to run inside the newly created
@@ -619,8 +630,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'CreateDatabase',
             $mergedSettings,
             $this->descriptors['createDatabase']
@@ -628,8 +639,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -639,7 +650,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedName = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedName = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $response = $databaseAdminClient->getDatabase($formattedName);
      * } finally {
      *     $databaseAdminClient->close();
@@ -649,7 +660,7 @@ class DatabaseAdminGapicClient
      * @param string $name         Required. The name of the requested database. Values are of the form
      *                             `projects/<project>/instances/<instance>/databases/<database>`.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -675,8 +686,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'GetDatabase',
             $mergedSettings,
             $this->descriptors['getDatabase']
@@ -684,8 +695,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -701,7 +712,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedDatabase = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedDatabase = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $statements = [];
      *     $operationResponse = $databaseAdminClient->updateDatabaseDdl($formattedDatabase, $statements);
      *     $operationResponse->pollUntilComplete();
@@ -733,9 +744,9 @@ class DatabaseAdminGapicClient
      * ```
      *
      * @param string   $database     Required. The database to update.
-     * @param string[] $statements   DDL statements to be applied to the database.
+     * @param string[] $statements   DDL statements to be applied to the database
      * @param array    $optionalArgs {
-     *                               Optional.
+     *                               Optional
      *
      *     @type string $operationId
      *          If empty, the new update request is assigned an
@@ -785,8 +796,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'UpdateDatabaseDdl',
             $mergedSettings,
             $this->descriptors['updateDatabaseDdl']
@@ -794,8 +805,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -805,7 +816,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedDatabase = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedDatabase = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $databaseAdminClient->dropDatabase($formattedDatabase);
      * } finally {
      *     $databaseAdminClient->close();
@@ -814,7 +825,7 @@ class DatabaseAdminGapicClient
      *
      * @param string $database     Required. The database to be dropped.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -838,8 +849,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'DropDatabase',
             $mergedSettings,
             $this->descriptors['dropDatabase']
@@ -847,8 +858,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -860,7 +871,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedDatabase = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedDatabase = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $response = $databaseAdminClient->getDatabaseDdl($formattedDatabase);
      * } finally {
      *     $databaseAdminClient->close();
@@ -869,7 +880,7 @@ class DatabaseAdminGapicClient
      *
      * @param string $database     Required. The database whose schema we wish to get.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -895,8 +906,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'GetDatabaseDdl',
             $mergedSettings,
             $this->descriptors['getDatabaseDdl']
@@ -904,8 +915,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -919,7 +930,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedResource = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedResource = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $policy = new Policy();
      *     $response = $databaseAdminClient->setIamPolicy($formattedResource, $policy);
      * } finally {
@@ -935,7 +946,7 @@ class DatabaseAdminGapicClient
      *                             valid policy but certain Cloud Platform services (such as Projects)
      *                             might reject them.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -962,8 +973,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'SetIamPolicy',
             $mergedSettings,
             $this->descriptors['setIamPolicy']
@@ -971,8 +982,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -986,7 +997,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedResource = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedResource = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $response = $databaseAdminClient->getIamPolicy($formattedResource);
      * } finally {
      *     $databaseAdminClient->close();
@@ -997,7 +1008,7 @@ class DatabaseAdminGapicClient
      *                             `resource` is usually specified as a path. For example, a Project
      *                             resource is specified as `projects/{project}`.
      * @param array  $optionalArgs {
-     *                             Optional.
+     *                             Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -1023,8 +1034,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'GetIamPolicy',
             $mergedSettings,
             $this->descriptors['getIamPolicy']
@@ -1032,8 +1043,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1048,7 +1059,7 @@ class DatabaseAdminGapicClient
      * ```
      * try {
      *     $databaseAdminClient = new DatabaseAdminClient();
-     *     $formattedResource = $databaseAdminClient->databaseName("[PROJECT]", "[INSTANCE]", "[DATABASE]");
+     *     $formattedResource = $databaseAdminClient->databaseName('[PROJECT]', '[INSTANCE]', '[DATABASE]');
      *     $permissions = [];
      *     $response = $databaseAdminClient->testIamPermissions($formattedResource, $permissions);
      * } finally {
@@ -1064,7 +1075,7 @@ class DatabaseAdminGapicClient
      *                               information see
      *                               [IAM Overview](https://cloud.google.com/iam/docs/overview#permissions).
      * @param array    $optionalArgs {
-     *                               Optional.
+     *                               Optional
      *
      *     @type \Google\GAX\RetrySettings|array $retrySettings
      *          Retry settings to use for this call. Can be a
@@ -1091,8 +1102,8 @@ class DatabaseAdminGapicClient
             );
         }
         $mergedSettings = $defaultCallSettings->merge(new CallSettings($optionalArgs));
-        $callable = ApiCallable::createApiCall(
-            $this->databaseAdminStub,
+
+        $callable = $this->databaseAdminTransport->createApiCall(
             'TestIamPermissions',
             $mergedSettings,
             $this->descriptors['testIamPermissions']
@@ -1100,8 +1111,8 @@ class DatabaseAdminGapicClient
 
         return $callable(
             $request,
-            [],
-            ['call_credentials_callback' => $this->createCredentialsCallback()]);
+            []
+        );
     }
 
     /**
@@ -1112,11 +1123,6 @@ class DatabaseAdminGapicClient
      */
     public function close()
     {
-        $this->databaseAdminStub->close();
-    }
-
-    private function createCredentialsCallback()
-    {
-        return $this->grpcCredentialsHelper->createCallCredentialsCallback();
+        $this->databaseAdminTransport->close();
     }
 }
