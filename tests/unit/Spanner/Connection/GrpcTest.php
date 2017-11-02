@@ -52,7 +52,6 @@ class GrpcTest extends \PHPUnit_Framework_TestCase
 
     const PROJECT = 'projects/my-project';
 
-    private $requestWrapper;
     private $successMessage;
 
     public function setUp()

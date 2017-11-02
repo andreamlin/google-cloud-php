@@ -39,7 +39,6 @@ class GrpcTest extends \PHPUnit_Framework_TestCase
     use GrpcTestTrait;
     use GrpcTrait;
 
-    private $requestWrapper;
     private $successMessage;
 
     public function setUp()
